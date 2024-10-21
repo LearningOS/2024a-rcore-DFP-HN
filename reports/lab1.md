@@ -7,22 +7,20 @@
 + 在TaskManager中加入了get_task_info(&self, time: &mut usize, syscall_times: &mut [u32; MAX_SYSCALL_NUM]),该函数用来获取task_info的time和syscall_time。该函数在sys_task_info函数中使用。
 
 # 简答作业
-1. RustSBI-QMEU Version 0.2.0-alpha.2
-ch2b_bad_address.rs的错误信息：PageFault in application, bad addr = 0x0, bad instruction = 0x804003a4, kernel killed it.
-ch2b_bad_instructions.rs的错误信息：IllegalInstruction in application, kernel killed it.
-ch2b_bad_register.rs的错误信息：IllegalInstruction in application, kernel killed it.
+1. RustSBI-QMEU Version 0.2.0-alpha.2<br>
+ch2b_bad_address.rs的错误信息：PageFault in application, bad addr = 0x0, bad instruction = 0x804003a4, kernel killed it.<br>
+ch2b_bad_instructions.rs的错误信息：IllegalInstruction in application, kernel killed it.<br>
+ch2b_bad_register.rs的错误信息：IllegalInstruction in application, kernel killed it.<br>
 2. 
 
-    1. 刚进入 __restore 时，a0代表trap_handler的返回值。在系统调用和程序调度时会使用 __restore。
-    2. 
-    ```Rust
-    ld t0, 32*8(sp) // 32*8(sp)处存储执行trap_handler前的sstatus值。
-    ld t1, 33*8(sp) // 33*8(sp)处存储执行trap_handler前的spec值
-    ld t2, 2*8(sp) // 2*8(sp)处存储用户栈的地址，将用户栈地址加载到t2中。
-    csrw sstatus, t0 // 恢复trap_handler执行前的status值。
-    csrw sepc, t1 // 恢复trap_handler执行前的spec值。
-    csrw sscratch, t2 //将用户栈的地址加载到sscratch中。
-    ```
+        1. 刚进入 __restore 时，a0代表trap_handler的返回值。在系统调用和程序调度时会使用 __restore。
+        2.  
+        ld t0, 32*8(sp) // 32*8(sp)处存储执行trap_handler前的sstatus值。
+        ld t1, 33*8(sp) // 33*8(sp)处存储执行trap_handler前的spec值
+        ld t2, 2*8(sp) // 2*8(sp)处存储用户栈的地址，将用户栈地址加载到t2中。
+        csrw sstatus, t0 // 恢复trap_handler执行前的status值。
+        csrw sepc, t1 // 恢复trap_handler执行前的spec值。
+        csrw sscratch, t2 //将用户栈的地址加载到sscratch中。
 3. x2是sp，不需要保存在栈中，x4是tp（线程指针），指向当前线程的上下文，主要用于多线程环境。每个线程都有自己的上下文，当线程切换时，操作系统会保存当前线程的所有寄存器状态（包括 tp）到线程控制块（TCB）中。在 RISC-V 的调用约定中，tp 作为一个特殊寄存器，不会在函数调用中被调用者保留。它的值可能在函数调用期间被覆盖，因此在正常情况下，调用者不需要保存 tp 的值到栈中。在上下文切换时，操作系统会负责保存和恢复 tp 的值，因此应用程序通常不需要管理这个寄存器。
 
 4. csrrw sp, sscratch, sp，这条指令将会交换sscratch交换sp的值，指令执行前sscratch存储用户栈地址，sp存储内核栈地址，交换后sscratch存储内核栈地址，sp存储用户栈地址。
