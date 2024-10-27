@@ -15,7 +15,7 @@ mod switch;
 mod task;
 
 use crate::loader::{get_app_data, get_num_app};
-use crate::mm::{MapPermission, VirtPageNum};
+use crate::mm::{MapPermission, VirtPageNum, FRAME_ALLOCATOR};
 use crate::sync::UPSafeCell;
 use crate::trap::TrapContext;
 use alloc::vec::Vec;
@@ -24,7 +24,6 @@ use lazy_static::*;
 use switch::__switch;
 pub use task::{TaskControlBlock, TaskStatus};
 use crate::timer::get_time_ms;
-//use crate::mm::FRAME_ALLOCATOR;
 use crate::mm::VirtAddr;
 
 pub use context::TaskContext;
@@ -184,7 +183,7 @@ impl TaskManager {
     pub fn mmap(&self, _start: VirtAddr, _end: VirtAddr, _port: usize) -> isize {
         let mut inner = self.inner.exclusive_access();
         let task_id = inner.current_task;
-        if inner.tasks[task_id].memory_set.is_used(_start.floor(), _end.ceil()) {
+        if inner.tasks[task_id].memory_set.is_used(_start.floor(), _end.ceil()) || !FRAME_ALLOCATOR.exclusive_access().is_enough(_start.floor(), _end.ceil()) {
             return -1;
         }
         else {
