@@ -1,6 +1,6 @@
 //! Implementation of [`PageTableEntry`] and [`PageTable`].
 
-use super::{frame_alloc, FrameTracker, PhysAddr, PhysPageNum, StepByOne, VirtAddr, VirtPageNum};
+use super::{frame_alloc, FrameTracker, PhysPageNum, StepByOne, VirtAddr, VirtPageNum};
 use alloc::vec;
 use alloc::vec::Vec;
 use bitflags::*;
@@ -175,8 +175,7 @@ pub fn translated_byte_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<&
 }
 
 /// translate VirtAddress to PhysicalAdress
-pub fn translate_virt_phy(virt: VirtAddr, token: usize) -> PhysAddr {
+pub fn translate_virt_phy(virt: VirtAddr, token: usize) -> Option<PhysPageNum> {
     let vpn = virt.floor();
-    let ppn = PageTable::from_token(token).translate(vpn).map(|entry| entry.ppn()).unwrap();
-    PhysAddr::from(ppn.0 << 12 | virt.page_offset())
+    PageTable::from_token(token).translate(vpn).map(|entry| entry.ppn())
 }

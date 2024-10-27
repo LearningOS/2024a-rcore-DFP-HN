@@ -20,10 +20,12 @@ use crate::sync::UPSafeCell;
 use crate::trap::TrapContext;
 use alloc::vec::Vec;
 use lazy_static::*;
+// use riscv::addr::VirtAddr;
 use switch::__switch;
 pub use task::{TaskControlBlock, TaskStatus};
 use crate::timer::get_time_ms;
-use crate::mm::FRAME_ALLOCATOR;
+//use crate::mm::FRAME_ALLOCATOR;
+use crate::mm::VirtAddr;
 
 pub use context::TaskContext;
 
@@ -179,29 +181,26 @@ impl TaskManager {
         inner.tasks[task_id].start_time
     }
     /// map physical address to virtual address
-    pub fn mmap(&self, vpn_start: VirtPageNum, vpn_end: VirtPageNum, _port: usize) -> isize {
+    pub fn mmap(&self, _start: VirtAddr, _end: VirtAddr, _port: usize) -> isize {
         let mut inner = self.inner.exclusive_access();
         let task_id = inner.current_task;
-        if inner.tasks[task_id].memory_set.is_used(vpn_start.into(), vpn_end.into()) {
+        if inner.tasks[task_id].memory_set.is_used(_start.floor(), _end.ceil()) {
             return -1;
         }
         else {
-            if FRAME_ALLOCATOR.exclusive_access().is_enough(vpn_start.into(), vpn_end.into()) {
-                let mut map_perm: MapPermission = MapPermission::U;
-                if _port & (1 << 0) != 0 {
-                    map_perm |= MapPermission::R;
-                }
-                if _port & (1 << 1) != 0 {
-                    map_perm |= MapPermission::W;
-                }
-                if _port & (1 << 2) != 0 {
-                    map_perm |= MapPermission::X;
-                }
-                inner.tasks[task_id].memory_set.insert_framed_area(vpn_start.into(), vpn_end.into(), map_perm);
-                inner.tasks[task_id].memory_set.activate();
-                return 0;
+            let mut map_perm: MapPermission = MapPermission::U;
+            if _port & (1 << 0) != 0 {
+                map_perm |= MapPermission::R;
             }
-            return -1;
+            if _port & (1 << 1) != 0 {
+                map_perm |= MapPermission::W;
+            }
+            if _port & (1 << 2) != 0 {
+                map_perm |= MapPermission::X;
+            }
+            inner.tasks[task_id].memory_set.insert_framed_area(_start, _end, map_perm);
+            // inner.tasks[task_id].memory_set.activate();
+            return 0;
         }
     }
     /// unmap physical address to virtual address

@@ -48,12 +48,24 @@ pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
     let time_us = get_time_us();
     let token = current_user_token();
     let virt_sec = unsafe { VirtAddr(&(*_ts).sec as *const usize as usize)};
-    let phy_sec = translate_virt_phy(virt_sec, token).0 as *mut usize;
+    if let Some(phy_sec) = translate_virt_phy(virt_sec, token) {
+        let phy_sec = (phy_sec.0 << 12 | virt_sec.page_offset()) as *mut usize;
+        unsafe {
+            *phy_sec = time_us / 1_000_000;
+        }
+    }
+    else {
+        return -1;
+    }
     let virt_usec = unsafe { VirtAddr(&(*_ts).usec as *const usize as usize)};
-    let phy_usec = translate_virt_phy(virt_usec, token).0 as *mut usize;
-    unsafe {
-        *phy_sec = time_us / 1_000_000;
-        *phy_usec = time_us % 1_000_000;
+    if let Some(phy_usec) = translate_virt_phy(virt_usec, token) {
+        let phy_usec = (phy_usec.0 << 12 | virt_usec.page_offset()) as *mut usize;
+        unsafe {
+            *phy_usec = time_us % 1_000_000;
+        }
+    }
+    else {
+        return -1;
     }
     0
 }
@@ -65,22 +77,37 @@ pub fn sys_task_info(_ti: *mut TaskInfo) -> isize {
     trace!("kernel: sys_task_info NOT IMPLEMENTED YET!");
     let token = current_user_token();
     let virt_status = unsafe { VirtAddr(&(*_ti).status as *const TaskStatus as usize)};
-    let phy_status = translate_virt_phy(virt_status, token).0 as *mut TaskStatus;
     let time_ms = get_time_ms();
-    unsafe {
-        *phy_status = TaskStatus::Running;
+    if let Some(phy_status) = translate_virt_phy(virt_status, token) {
+        let phy_status = (phy_status.0 << 12 | virt_status.page_offset()) as *mut TaskStatus;
+        unsafe {
+            *phy_status = TaskStatus::Running;
+        }
+    }
+    else {
+        return -1;
     }
     for i in 0..MAX_SYSCALL_NUM {
         let virt_syscall_times = unsafe {VirtAddr(&(*_ti).syscall_times[i] as *const u32 as usize)};
-        let phy_syscall_times = translate_virt_phy(virt_syscall_times, token).0 as *mut u32;
-        unsafe {
-            *phy_syscall_times = TASK_MANAGER.get_syscall_times(i);
+        if let Some(phy_syscall_times) = translate_virt_phy(virt_syscall_times, token) {
+            let phy_syscall_times = (phy_syscall_times.0 << 12 | virt_syscall_times.page_offset()) as *mut u32;
+            unsafe {
+                *phy_syscall_times = TASK_MANAGER.get_syscall_times(i);
+            }
+        }
+        else {
+            return -1;
         }
     }
     let virt_time = unsafe { VirtAddr(&(*_ti).time as *const usize as usize)};
-    let phy_time = translate_virt_phy(virt_time, token).0 as *mut usize;
-    unsafe {
-        *phy_time = time_ms - TASK_MANAGER.get_start_time();
+    if let Some(phy_time) = translate_virt_phy(virt_time, token) {
+        let phy_time = (phy_time.0 << 12 | virt_time.page_offset()) as *mut usize;
+        unsafe {
+            *phy_time = time_ms - TASK_MANAGER.get_start_time();
+        }
+    }
+    else {
+        return -1;
     }
     0
 }
@@ -89,11 +116,10 @@ pub fn sys_task_info(_ti: *mut TaskInfo) -> isize {
 pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
     trace!("kernel: sys_mmap NOT IMPLEMENTED YET!");
     if (_start & (PAGE_SIZE - 1) != 0) || (_port & !0x7 != 0) || (_port & 0x7 == 0) {
+        println!("sys_mmap error occur!");
         return -1;
     }
-    let vpn_start = VirtAddr(_start).floor();
-    let vpn_end = VirtAddr(_start + _len).floor();
-    TASK_MANAGER.mmap(vpn_start.into(), vpn_end.into(), _port)
+    TASK_MANAGER.mmap(VirtAddr(_start), VirtAddr(_start + _len), _port)
 }
 
 // YOUR JOB: Implement munmap.
@@ -103,9 +129,8 @@ pub fn sys_munmap(_start: usize, _len: usize) -> isize {
         return -1;
     }
     let vpn_start = VirtAddr(_start).floor();
-    let vpn_end = VirtAddr(_start + _len).floor();
+    let vpn_end = VirtAddr(_start + _len).ceil();
     TASK_MANAGER.munmap(vpn_start.into(), vpn_end.into())
-    // -1
 
 }
 /// change data segment size

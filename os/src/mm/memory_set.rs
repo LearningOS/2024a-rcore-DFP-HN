@@ -265,10 +265,14 @@ impl MemorySet {
     /// Check whether logic page number is used or not
     /// if return -1, then the logic page number is used, else is not used.
     pub fn is_used(&self, vpn_start: VirtPageNum, vpn_end: VirtPageNum) -> bool {
-        for avpn in self.areas.iter() {
-            if avpn.is_used(vpn_start.into(), vpn_end.into()) {
-                return true;
+        let mut vpn = vpn_start;
+        while vpn < vpn_end {
+            if let Some(pte) = self.translate(vpn) {
+                if pte.is_valid() {
+                    return true;
+                }
             }
+            vpn.0 += 1;
         }
         false
     }
@@ -276,20 +280,29 @@ impl MemorySet {
     #[allow(unused)]
     pub fn munmap(&mut self, vpn_start: VirtPageNum, vpn_end: VirtPageNum) -> isize {
         let mut vpn = vpn_start;
-        while vpn <= vpn_end {
+        while vpn < vpn_end {
             if let Some(pte) = self.page_table.translate(vpn.into()) {
+                if pte.is_valid() {
+                    vpn.step();
+                }
+                else {
+                    return -1;
+                }
             }
-            else {
-                return -1;
-            }
-            vpn.step();
+            return -1;
         }
         vpn = vpn_start;
-        while vpn <= vpn_end {
-            self.page_table.unmap(vpn.into());
-            vpn.step();
+        for area in self.areas.iter_mut() {
+            if area.data_frames.contains_key(&vpn) {
+                while vpn < vpn_end {
+                    area.unmap_one(&mut self.page_table, vpn.into());
+                    vpn.step();
+                }
+                break;
+            }
+            // self.page_table.unmap(vpn.into());
         }
-        self.activate();
+        // self.activate();
         0
     }
 }
@@ -385,18 +398,6 @@ impl MapArea {
             }
             current_vpn.step();
         }
-    }
-    /// Check whether logic page number is used or not
-    /// if return -1, then the logic page number is used, else is not used.
-    pub fn is_used(&self, vpn_start: VirtPageNum, vpn_end: VirtPageNum) -> bool {
-        let mut vpn = vpn_start;
-        while vpn <= vpn_end {
-            if vpn >= self.vpn_range.get_start() && vpn < self.vpn_range.get_end() {
-                return true;
-            }
-            vpn.step();
-        }
-        false
     }
 }
 
