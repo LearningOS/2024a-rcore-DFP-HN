@@ -199,7 +199,6 @@ impl TaskManager {
                 map_perm |= MapPermission::X;
             }
             inner.tasks[task_id].memory_set.insert_framed_area(_start, _end, map_perm);
-            // inner.tasks[task_id].memory_set.activate();
             return 0;
         }
     }
