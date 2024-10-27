@@ -15,12 +15,15 @@ mod switch;
 mod task;
 
 use crate::loader::{get_app_data, get_num_app};
+use crate::mm::{MapPermission, VirtPageNum};
 use crate::sync::UPSafeCell;
 use crate::trap::TrapContext;
 use alloc::vec::Vec;
 use lazy_static::*;
 use switch::__switch;
 pub use task::{TaskControlBlock, TaskStatus};
+use crate::timer::get_time_ms;
+use crate::mm::FRAME_ALLOCATOR;
 
 pub use context::TaskContext;
 
@@ -79,6 +82,7 @@ impl TaskManager {
         let mut inner = self.inner.exclusive_access();
         let next_task = &mut inner.tasks[0];
         next_task.task_status = TaskStatus::Running;
+        next_task.start_time = get_time_ms();
         let next_task_cx_ptr = &next_task.task_cx as *const TaskContext;
         drop(inner);
         let mut _unused = TaskContext::zero_init();
@@ -140,6 +144,9 @@ impl TaskManager {
             let mut inner = self.inner.exclusive_access();
             let current = inner.current_task;
             inner.tasks[next].task_status = TaskStatus::Running;
+            if inner.tasks[next].start_time == 0 {
+                inner.tasks[next].start_time = get_time_ms();
+            }
             inner.current_task = next;
             let current_task_cx_ptr = &mut inner.tasks[current].task_cx as *mut TaskContext;
             let next_task_cx_ptr = &inner.tasks[next].task_cx as *const TaskContext;
@@ -152,6 +159,56 @@ impl TaskManager {
         } else {
             panic!("All applications completed!");
         }
+    }
+    /// Update syscall times by index
+    pub fn update_syscall_times(&self, idx: usize) {
+        let mut inner = self.inner.exclusive_access();
+        let task_id = inner.current_task;
+        inner.tasks[task_id].syscall_times[idx] += 1;
+    }
+    /// Get syscall times by index
+    pub fn get_syscall_times(&self, idx: usize) -> u32 {
+        let inner = self.inner.exclusive_access();
+        let task_id = inner.current_task;
+        inner.tasks[task_id].syscall_times[idx]
+    }
+    /// Get program start time
+    pub fn get_start_time(&self) -> usize {
+        let inner = self.inner.exclusive_access();
+        let task_id = inner.current_task;
+        inner.tasks[task_id].start_time
+    }
+    /// map physical address to virtual address
+    pub fn mmap(&self, vpn_start: VirtPageNum, vpn_end: VirtPageNum, _port: usize) -> isize {
+        let mut inner = self.inner.exclusive_access();
+        let task_id = inner.current_task;
+        if inner.tasks[task_id].memory_set.is_used(vpn_start.into(), vpn_end.into()) {
+            return -1;
+        }
+        else {
+            if FRAME_ALLOCATOR.exclusive_access().is_enough(vpn_start.into(), vpn_end.into()) {
+                let mut map_perm: MapPermission = MapPermission::U;
+                if _port & (1 << 0) != 0 {
+                    map_perm |= MapPermission::R;
+                }
+                if _port & (1 << 1) != 0 {
+                    map_perm |= MapPermission::W;
+                }
+                if _port & (1 << 2) != 0 {
+                    map_perm |= MapPermission::X;
+                }
+                inner.tasks[task_id].memory_set.insert_framed_area(vpn_start.into(), vpn_end.into(), map_perm);
+                // inner.tasks[task_id].memory_set.activate();
+                return 0;
+            }
+            return -1;
+        }
+    }
+    /// unmap physical address to virtual address
+    pub fn munmap(&self, vpn_start: VirtPageNum, vpn_end: VirtPageNum) -> isize {
+        let mut inner = self.inner.exclusive_access();
+        let task_id = inner.current_task;
+        inner.tasks[task_id].memory_set.munmap(vpn_start.into(), vpn_end.into())
     }
 }
 

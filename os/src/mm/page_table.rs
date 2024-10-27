@@ -1,6 +1,6 @@
 //! Implementation of [`PageTableEntry`] and [`PageTable`].
 
-use super::{frame_alloc, FrameTracker, PhysPageNum, StepByOne, VirtAddr, VirtPageNum};
+use super::{frame_alloc, FrameTracker, PhysAddr, PhysPageNum, StepByOne, VirtAddr, VirtPageNum};
 use alloc::vec;
 use alloc::vec::Vec;
 use bitflags::*;
@@ -66,8 +66,10 @@ impl PageTableEntry {
 
 /// page table structure
 pub struct PageTable {
-    root_ppn: PhysPageNum,
-    frames: Vec<FrameTracker>,
+    /// physical page number of PageTable
+    pub root_ppn: PhysPageNum,
+    /// set of the page
+    pub frames: Vec<FrameTracker>,
 }
 
 /// Assume that it won't oom when creating/mapping.
@@ -170,4 +172,11 @@ pub fn translated_byte_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<&
         start = end_va.into();
     }
     v
+}
+
+/// translate VirtAddress to PhysicalAdress
+pub fn translate_virt_phy(virt: VirtAddr, token: usize) -> PhysAddr {
+    let vpn = virt.floor();
+    let ppn = PageTable::from_token(token).translate(vpn).map(|entry| entry.ppn()).unwrap();
+    PhysAddr::from(ppn.0 << 12 | virt.page_offset())
 }

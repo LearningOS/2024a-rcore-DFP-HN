@@ -1,9 +1,11 @@
 //! Process management syscalls
+// use riscv::addr::VirtAddr;
+
 use crate::{
-    config::MAX_SYSCALL_NUM,
-    task::{
-        change_program_brk, exit_current_and_run_next, suspend_current_and_run_next, TaskStatus,
+    config::{MAX_SYSCALL_NUM, PAGE_SIZE}, mm::{translate_virt_phy, VirtAddr}, task::{
+        change_program_brk, current_user_token, exit_current_and_run_next, suspend_current_and_run_next, TaskStatus, TASK_MANAGER
     },
+    timer::{get_time_ms, get_time_us},
 };
 
 #[repr(C)]
@@ -43,7 +45,17 @@ pub fn sys_yield() -> isize {
 /// HINT: What if [`TimeVal`] is splitted by two pages ?
 pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
     trace!("kernel: sys_get_time");
-    -1
+    let time_us = get_time_us();
+    let token = current_user_token();
+    let virt_sec = unsafe { VirtAddr(&(*_ts).sec as *const usize as usize)};
+    let phy_sec = translate_virt_phy(virt_sec, token).0 as *mut usize;
+    let virt_usec = unsafe { VirtAddr(&(*_ts).usec as *const usize as usize)};
+    let phy_usec = translate_virt_phy(virt_usec, token).0 as *mut usize;
+    unsafe {
+        *phy_sec = time_us / 1_000_000;
+        *phy_usec = time_us % 1_000_000;
+    }
+    0
 }
 
 /// YOUR JOB: Finish sys_task_info to pass testcases
@@ -51,19 +63,49 @@ pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
 /// HINT: What if [`TaskInfo`] is splitted by two pages ?
 pub fn sys_task_info(_ti: *mut TaskInfo) -> isize {
     trace!("kernel: sys_task_info NOT IMPLEMENTED YET!");
-    -1
+    let token = current_user_token();
+    let virt_status = unsafe { VirtAddr(&(*_ti).status as *const TaskStatus as usize)};
+    let phy_status = translate_virt_phy(virt_status, token).0 as *mut TaskStatus;
+    let time_ms = get_time_ms();
+    unsafe {
+        *phy_status = TaskStatus::Running;
+    }
+    for i in 0..MAX_SYSCALL_NUM {
+        let virt_syscall_times = unsafe {VirtAddr(&(*_ti).syscall_times[i] as *const u32 as usize)};
+        let phy_syscall_times = translate_virt_phy(virt_syscall_times, token).0 as *mut u32;
+        unsafe {
+            *phy_syscall_times = TASK_MANAGER.get_syscall_times(i);
+        }
+    }
+    let virt_time = unsafe { VirtAddr(&(*_ti).time as *const usize as usize)};
+    let phy_time = translate_virt_phy(virt_time, token).0 as *mut usize;
+    unsafe {
+        *phy_time = time_ms - TASK_MANAGER.get_start_time();
+    }
+    0
 }
 
 // YOUR JOB: Implement mmap.
 pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
     trace!("kernel: sys_mmap NOT IMPLEMENTED YET!");
-    -1
+    if (_start & (PAGE_SIZE - 1) != 0) || (_port & !0x7 != 0) || (_port & 0x7 == 0) {
+        return -1;
+    }
+    let vpn_start = VirtAddr(_start).floor();
+    let vpn_end = VirtAddr(_start + _len).floor();
+    TASK_MANAGER.mmap(vpn_start.into(), vpn_end.into(), _port)
 }
 
 // YOUR JOB: Implement munmap.
 pub fn sys_munmap(_start: usize, _len: usize) -> isize {
     trace!("kernel: sys_munmap NOT IMPLEMENTED YET!");
-    -1
+    if _start & (PAGE_SIZE - 1) != 0 {
+        return -1;
+    }
+    let vpn_start = VirtAddr(_start).floor();
+    let vpn_end = VirtAddr(_start + _len).floor();
+    TASK_MANAGER.munmap(vpn_start.into(), vpn_end.into())
+
 }
 /// change data segment size
 pub fn sys_sbrk(size: i32) -> isize {

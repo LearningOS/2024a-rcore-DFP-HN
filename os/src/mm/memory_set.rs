@@ -262,6 +262,37 @@ impl MemorySet {
             false
         }
     }
+    /// Check whether logic page number is used or not
+    /// if return -1, then the logic page number is used, else is not used.
+    pub fn is_used(&self, vpn_start: VirtPageNum, vpn_end: VirtPageNum) -> bool {
+        for avpn in self.areas.iter() {
+            if avpn.is_used(vpn_start.into(), vpn_end.into()) {
+                return true;
+            }
+        }
+        false
+    }
+    /// map physical address to virtual address
+    pub fn munmap(&mut self, vpn_start: VirtPageNum, vpn_end: VirtPageNum) -> isize {
+        let mut vpn = vpn_start;
+        let mut ppn_vec = Vec::new();
+        while vpn <= vpn_end {
+            if let Some(pte) = self.page_table.translate(vpn.into()) {
+                ppn_vec.push(pte.ppn());
+            }
+            else {
+                return -1;
+            }
+            vpn.step();
+        }
+        vpn = vpn_start;
+        while vpn <= vpn_end {
+            self.page_table.unmap(vpn.into());
+            vpn.step();
+        }
+        // self.activate();
+        0
+    }
 }
 /// map area structure, controls a contiguous piece of virtual memory
 pub struct MapArea {
@@ -355,6 +386,18 @@ impl MapArea {
             }
             current_vpn.step();
         }
+    }
+    /// Check whether logic page number is used or not
+    /// if return -1, then the logic page number is used, else is not used.
+    pub fn is_used(&self, vpn_start: VirtPageNum, vpn_end: VirtPageNum) -> bool {
+        let mut vpn = vpn_start;
+        while vpn <= vpn_end {
+            if vpn >= self.vpn_range.get_start() && vpn < self.vpn_range.get_end() {
+                return true;
+            }
+            vpn.step();
+        }
+        false
     }
 }
 
