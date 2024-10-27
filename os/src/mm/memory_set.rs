@@ -289,18 +289,20 @@ impl MemorySet {
                     return -1;
                 }
             }
-            return -1;
+            else {
+                return -1;
+            }
         }
         vpn = vpn_start;
-        for area in self.areas.iter_mut() {
-            if area.data_frames.contains_key(&vpn) {
-                while vpn < vpn_end {
+        while vpn < vpn_end {
+            for area in self.areas.iter_mut() {
+                if area.data_frames.contains_key(&vpn) {
                     area.unmap_one(&mut self.page_table, vpn.into());
-                    vpn.step();
+                    break;
                 }
-                break;
             }
-            // self.page_table.unmap(vpn.into());
+            vpn.step();
+            self.page_table.unmap(vpn.into());
         }
         // self.activate();
         0
