@@ -198,13 +198,14 @@ impl TaskManager {
                     map_perm |= MapPermission::X;
                 }
                 inner.tasks[task_id].memory_set.insert_framed_area(vpn_start.into(), vpn_end.into(), map_perm);
-                // inner.tasks[task_id].memory_set.activate();
+                inner.tasks[task_id].memory_set.activate();
                 return 0;
             }
             return -1;
         }
     }
     /// unmap physical address to virtual address
+    #[allow(unused)]
     pub fn munmap(&self, vpn_start: VirtPageNum, vpn_end: VirtPageNum) -> isize {
         let mut inner = self.inner.exclusive_access();
         let task_id = inner.current_task;

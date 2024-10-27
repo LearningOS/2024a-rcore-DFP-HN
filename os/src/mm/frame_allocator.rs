@@ -1,7 +1,7 @@
 //! Implementation of [`FrameAllocator`] which
 //! controls all the frames in the operating system.
 
-use super::{PhysAddr, PhysPageNum, VirtPageNum};
+use super::{PhysAddr, PhysPageNum};
 use crate::config::MEMORY_END;
 use crate::sync::UPSafeCell;
 use alloc::vec::Vec;
@@ -83,14 +83,6 @@ impl FrameAllocator for StackFrameAllocator {
         }
         // recycle
         self.recycled.push(ppn);
-    }
-}
-
-impl StackFrameAllocator {
-    /// Check whether physical page number is enough.
-    pub fn is_enough(&self, vpn_start: VirtPageNum, vpn_end: VirtPageNum) -> bool {
-        let res_num = self.end - self.current + self.recycled.len();
-        return res_num > vpn_end.0 - vpn_start.0;
     }
 }
 

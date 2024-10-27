@@ -273,12 +273,11 @@ impl MemorySet {
         false
     }
     /// map physical address to virtual address
+    #[allow(unused)]
     pub fn munmap(&mut self, vpn_start: VirtPageNum, vpn_end: VirtPageNum) -> isize {
         let mut vpn = vpn_start;
-        let mut ppn_vec = Vec::new();
         while vpn <= vpn_end {
             if let Some(pte) = self.page_table.translate(vpn.into()) {
-                ppn_vec.push(pte.ppn());
             }
             else {
                 return -1;
@@ -290,7 +289,7 @@ impl MemorySet {
             self.page_table.unmap(vpn.into());
             vpn.step();
         }
-        // self.activate();
+        self.activate();
         0
     }
 }
@@ -453,3 +452,5 @@ pub fn remap_test() {
         .executable(),);
     println!("remap_test passed!");
 }
+
+
