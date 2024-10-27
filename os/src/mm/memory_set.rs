@@ -302,7 +302,6 @@ impl MemorySet {
                 }
             }
             vpn.step();
-            self.page_table.unmap(vpn.into());
         }
         // self.activate();
         0
