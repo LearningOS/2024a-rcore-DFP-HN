@@ -116,7 +116,6 @@ pub fn sys_task_info(_ti: *mut TaskInfo) -> isize {
 pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
     trace!("kernel: sys_mmap NOT IMPLEMENTED YET!");
     if (_start & (PAGE_SIZE - 1) != 0) || (_port & !0x7 != 0) || (_port & 0x7 == 0) {
-        println!("sys_mmap error occur!");
         return -1;
     }
     TASK_MANAGER.mmap(VirtAddr(_start), VirtAddr(_start + _len), _port)
