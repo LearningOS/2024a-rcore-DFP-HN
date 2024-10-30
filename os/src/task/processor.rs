@@ -4,13 +4,16 @@
 //! the current running state of CPU is recorded,
 //! and the replacement and transfer of control flow of different applications are executed.
 
-use super::__switch;
+// use super::manager::TASK_MANAGER;
+use super:: __switch;
 use super::{fetch_task, TaskStatus};
 use super::{TaskContext, TaskControlBlock};
 use crate::sync::UPSafeCell;
+use crate::timer::get_time_ms;
 use crate::trap::TrapContext;
 use alloc::sync::Arc;
 use lazy_static::*;
+use crate::config::BIG_STRIDE;
 
 /// Processor management structure
 pub struct Processor {
@@ -44,6 +47,7 @@ impl Processor {
     pub fn current(&self) -> Option<Arc<TaskControlBlock>> {
         self.current.as_ref().map(Arc::clone)
     }
+
 }
 
 lazy_static! {
@@ -57,10 +61,18 @@ pub fn run_tasks() {
         let mut processor = PROCESSOR.exclusive_access();
         if let Some(task) = fetch_task() {
             let idle_task_cx_ptr = processor.get_idle_task_cx_ptr();
+            if let Some(idle_task) = &processor.current {
+                let mut idle_task = idle_task.inner_exclusive_access();
+                idle_task.stride = (idle_task.stride + BIG_STRIDE as usize / idle_task.priority as usize) % (BIG_STRIDE + 1);
+            }
             // access coming task TCB exclusively
             let mut task_inner = task.inner_exclusive_access();
             let next_task_cx_ptr = &task_inner.task_cx as *const TaskContext;
             task_inner.task_status = TaskStatus::Running;
+            if task_inner.start_time == 0 {
+                task_inner.start_time = get_time_ms();
+            }
+            
             // release coming task_inner manually
             drop(task_inner);
             // release coming task TCB manually
@@ -108,4 +120,5 @@ pub fn schedule(switched_task_cx_ptr: *mut TaskContext) {
     unsafe {
         __switch(switched_task_cx_ptr, idle_task_cx_ptr);
     }
+
 }

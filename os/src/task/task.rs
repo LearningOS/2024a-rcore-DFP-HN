@@ -2,12 +2,13 @@
 use super::TaskContext;
 use super::{kstack_alloc, pid_alloc, KernelStack, PidHandle};
 use crate::config::TRAP_CONTEXT_BASE;
-use crate::mm::{MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE};
+use crate::mm::{MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE, MapPermission, FRAME_ALLOCATOR, VirtPageNum};
 use crate::sync::UPSafeCell;
 use crate::trap::{trap_handler, TrapContext};
 use alloc::sync::{Arc, Weak};
 use alloc::vec::Vec;
 use core::cell::RefMut;
+use crate::config::MAX_SYSCALL_NUM;
 
 /// Task control block structure
 ///
@@ -68,6 +69,19 @@ pub struct TaskControlBlockInner {
 
     /// Program break
     pub program_brk: usize,
+    
+    /// Program start time
+    pub start_time: usize,
+
+    /// Program syscall times
+    pub syscall_times: [u32; MAX_SYSCALL_NUM],
+
+    /// current stride
+    pub stride: usize,
+
+    /// Task priority
+    pub priority: isize,
+
 }
 
 impl TaskControlBlockInner {
@@ -118,6 +132,10 @@ impl TaskControlBlock {
                     exit_code: 0,
                     heap_bottom: user_sp,
                     program_brk: user_sp,
+                    start_time: 0,
+                    syscall_times: [0; MAX_SYSCALL_NUM],
+                    stride: 0,
+                    priority: 16,
                 })
             },
         };
@@ -191,6 +209,10 @@ impl TaskControlBlock {
                     exit_code: 0,
                     heap_bottom: parent_inner.heap_bottom,
                     program_brk: parent_inner.program_brk,
+                    start_time: 0,
+                    syscall_times: [0; MAX_SYSCALL_NUM],
+                    stride: 0,
+                    priority: 16,
                 })
             },
         });
@@ -235,6 +257,96 @@ impl TaskControlBlock {
         } else {
             None
         }
+    }
+    /// parent process spawn the child process
+    pub fn spawn(self: &Arc<Self>, elf_data: &[u8]) ->Arc<Self> {
+        let (memory_set, user_sp, entry_point) = MemorySet::from_elf(elf_data);
+        let trap_cx_ppn = memory_set
+            .translate(VirtAddr::from(TRAP_CONTEXT_BASE).into())
+            .unwrap()
+            .ppn();
+        let pid_handle = pid_alloc();
+        let kernel_stack = kstack_alloc();
+        let kernel_stack_top = kernel_stack.get_top();
+        let task_control_block = Arc::new(TaskControlBlock {
+            pid: pid_handle,
+            kernel_stack,
+            inner: unsafe {
+                UPSafeCell::new(TaskControlBlockInner {
+                    trap_cx_ppn,
+                    base_size: user_sp,
+                    task_cx: TaskContext::goto_trap_return(kernel_stack_top),
+                    task_status: TaskStatus::Ready,
+                    memory_set,
+                    parent: Some(Arc::downgrade(self)),
+                    children: Vec::new(),
+                    exit_code: 0,
+                    heap_bottom: user_sp,
+                    program_brk: user_sp,
+                    start_time: 0,
+                    syscall_times: [0; MAX_SYSCALL_NUM],
+                    stride: 0,
+                    priority: 16,
+                })
+            },
+        });
+        // add child
+        let mut parent_inner = self.inner_exclusive_access();
+        parent_inner.children.push(task_control_block.clone());
+        // modify kernel_sp in trap_cx
+        // **** access child PCB exclusively
+        let trap_cx = task_control_block.inner_exclusive_access().get_trap_cx();
+        *trap_cx = TrapContext::app_init_context(
+            entry_point,
+            user_sp,
+            KERNEL_SPACE.exclusive_access().token(),
+            kernel_stack_top,
+            trap_handler as usize,
+        );
+        task_control_block
+
+    }
+    /// Update syscall times by index
+    pub fn update_syscall_times(&self, idx: usize) {
+        let mut inner = self.inner_exclusive_access();
+        inner.syscall_times[idx] += 1;
+    }
+    /// Get syscall times by index
+    pub fn get_syscall_times(&self, idx: usize) -> u32 {
+        let inner = self.inner_exclusive_access();
+        inner.syscall_times[idx].into()
+    }
+    /// Get program start time
+    pub fn get_start_time(&self) -> usize {
+        let inner = self.inner_exclusive_access();
+        inner.start_time.into()
+    }
+    /// map physical address to virtual address
+    pub fn mmap(&self, _start: VirtAddr, _end: VirtAddr, _port: usize) -> isize {
+        let mut inner = self.inner_exclusive_access();
+        if inner.memory_set.is_used(_start.floor(), _end.ceil()) || !FRAME_ALLOCATOR.exclusive_access().is_enough(_start.floor(), _end.ceil()) {
+            return -1;
+        }
+        else {
+            let mut map_perm: MapPermission = MapPermission::U;
+            if _port & (1 << 0) != 0 {
+                map_perm |= MapPermission::R;
+            }
+            if _port & (1 << 1) != 0 {
+                map_perm |= MapPermission::W;
+            }
+            if _port & (1 << 2) != 0 {
+                map_perm |= MapPermission::X;
+            }
+            inner.memory_set.insert_framed_area(_start, _end, map_perm);
+            return 0;
+        }
+    }
+    /// unmap physical address to virtual address
+    #[allow(unused)]
+    pub fn munmap(&self, vpn_start: VirtPageNum, vpn_end: VirtPageNum) -> isize {
+        let mut inner = self.inner_exclusive_access();
+        inner.memory_set.munmap(vpn_start.into(), vpn_end.into())
     }
 }
 

@@ -6,6 +6,7 @@ use crate::sync::UPSafeCell;
 use alloc::vec::Vec;
 use core::fmt::{self, Debug, Formatter};
 use lazy_static::*;
+use crate::mm::VirtPageNum;
 
 /// tracker for physical page frame allocation and deallocation
 pub struct FrameTracker {
@@ -54,6 +55,9 @@ impl StackFrameAllocator {
         self.current = l.0;
         self.end = r.0;
         // trace!("last {} Physical Frames.", self.end - self.current);
+    }
+    pub fn is_enough(&self, vpn_start: VirtPageNum, vpn_end: VirtPageNum) -> bool {
+        return vpn_end.0 - vpn_start.0 <= self.recycled.len() + self.end - self.current;
     }
 }
 impl FrameAllocator for StackFrameAllocator {
