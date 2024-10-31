@@ -67,6 +67,7 @@ pub fn trap_handler() -> ! {
             cx.sepc += 4;
             let current_task = current_task().unwrap();
             current_task.update_syscall_times(cx.x[17]);
+            drop(current_task);
             // get system call return value
             let result = syscall(cx.x[17], [cx.x[10], cx.x[11], cx.x[12]]);
             // cx is changed during sys_exec, so we have to call it again
