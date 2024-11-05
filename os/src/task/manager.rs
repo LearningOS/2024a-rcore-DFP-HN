@@ -14,6 +14,7 @@ pub struct TaskManager {
     
     /// The stopping task, leave a reference so that the kernel stack will not be recycled when switching tasks
     stop_task: Option<Arc<TaskControlBlock>>,
+
 }
 
 /// A simple FIFO scheduler.

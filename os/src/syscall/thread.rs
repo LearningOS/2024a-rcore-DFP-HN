@@ -1,9 +1,10 @@
+
 use crate::{
     mm::kernel_token,
     task::{add_task, current_task, TaskControlBlock},
     trap::{trap_handler, TrapContext},
 };
-use alloc::sync::Arc;
+use alloc::{sync::Arc, vec};
 /// thread create syscall
 pub fn sys_thread_create(entry: usize, arg: usize) -> isize {
     trace!(
@@ -35,12 +36,48 @@ pub fn sys_thread_create(entry: usize, arg: usize) -> isize {
     let new_task_res = new_task_inner.res.as_ref().unwrap();
     let new_task_tid = new_task_res.tid;
     let mut process_inner = process.inner_exclusive_access();
+
+    let mutex_len = process_inner.mutex_list.len();
+    let semaphore_len = process_inner.semaphore_list.len();
     // add new thread to current process
     let tasks = &mut process_inner.tasks;
     while tasks.len() < new_task_tid + 1 {
         tasks.push(None);
     }
     tasks[new_task_tid] = Some(Arc::clone(&new_task));
+
+    let allocate_mutex = &mut process_inner.allocate_mutex;
+    while allocate_mutex.len() < new_task_tid + 1 {
+        allocate_mutex.push(vec![0;mutex_len]);
+    }
+    if allocate_mutex.len() > new_task_tid {
+        allocate_mutex[new_task_tid] = vec![0;mutex_len];
+    }
+
+    let allocate_semaphore = &mut process_inner.allocate_semaphore;
+    while allocate_semaphore.len() < new_task_tid + 1 {
+        allocate_semaphore.push(vec![0;semaphore_len]);
+    }
+    if allocate_semaphore.len() > new_task_tid {
+        allocate_semaphore[new_task_tid] = vec![0;semaphore_len];
+    }
+
+    let need_mutex = &mut process_inner.need_mutex;
+    while need_mutex.len() < new_task_tid + 1 {
+        need_mutex.push(-1);
+    }
+    if need_mutex.len() > new_task_tid {
+        need_mutex[new_task_tid] = -1;
+    }
+
+    let need_semaphore = &mut process_inner.need_semaphore;
+    while need_semaphore.len() < new_task_tid + 1 {
+        need_semaphore.push(vec![0; semaphore_len]);
+    }
+    if need_semaphore.len() > new_task_tid {
+        need_semaphore[new_task_tid] = vec![0; semaphore_len];
+    }
+
     let new_task_trap_cx = new_task_inner.get_trap_cx();
     *new_task_trap_cx = TrapContext::app_init_context(
         entry,

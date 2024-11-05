@@ -14,6 +14,7 @@ use alloc::sync::{Arc, Weak};
 use alloc::vec;
 use alloc::vec::Vec;
 use core::cell::RefMut;
+use super::current_task;
 
 /// Process Control Block
 pub struct ProcessControlBlock {
@@ -49,6 +50,18 @@ pub struct ProcessControlBlockInner {
     pub semaphore_list: Vec<Option<Arc<Semaphore>>>,
     /// condvar list
     pub condvar_list: Vec<Option<Arc<Condvar>>>,
+    /// deadlock detect
+    pub deadlock_detect: bool,
+    /// need mutex
+    pub need_mutex: Vec<isize>,
+    /// need semaphore
+    pub need_semaphore: Vec<Vec<usize>>,
+    /// allocate mutex
+    pub allocate_mutex: Vec<Vec<usize>>,
+    /// allocate semaphore
+    pub allocate_semaphore: Vec<Vec<usize>>,
+    /// available semaphore
+    pub available_semaphore: Vec<usize>,
 }
 
 impl ProcessControlBlockInner {
@@ -81,6 +94,22 @@ impl ProcessControlBlockInner {
     /// get a task with tid in this process
     pub fn get_task(&self, tid: usize) -> Arc<TaskControlBlock> {
         self.tasks[tid].as_ref().unwrap().clone()
+    }
+    /// get tidx
+    pub fn get_tidx(&self) -> isize {
+        let currnet_task = current_task().unwrap();
+        let inner = currnet_task.inner_exclusive_access();
+        let tidx = inner.res.as_ref().unwrap().tid.into();
+        let mut i: isize = 0;
+        for task in self.tasks.iter() {
+            let task = task.as_ref().unwrap();
+            let task_inner = task.inner_exclusive_access();
+            if task_inner.res.as_ref().unwrap().tid == tidx {
+                return i.into();
+            }
+            i += 1;
+        }
+        -1
     }
 }
 
@@ -119,6 +148,12 @@ impl ProcessControlBlock {
                     mutex_list: Vec::new(),
                     semaphore_list: Vec::new(),
                     condvar_list: Vec::new(),
+                    deadlock_detect: false,
+                    need_mutex: vec![-1],
+                    need_semaphore: vec![vec![]],
+                    allocate_mutex: vec![vec![]],
+                    allocate_semaphore: vec![vec![]],
+                    available_semaphore: vec![],
                 })
             },
         });
@@ -245,6 +280,12 @@ impl ProcessControlBlock {
                     mutex_list: Vec::new(),
                     semaphore_list: Vec::new(),
                     condvar_list: Vec::new(),
+                    deadlock_detect: parent.deadlock_detect,
+                    need_mutex: vec![-1],
+                    need_semaphore: vec![vec![]],
+                    allocate_mutex: vec![vec![]],
+                    allocate_semaphore: vec![vec![]],
+                    available_semaphore: vec![],
                 })
             },
         });
