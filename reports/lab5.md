@@ -1,30 +1,10 @@
-# Lab3报告
+# Lab5报告
 ## 实现的功能
-+ 实现了进程的创建，分配独立的空间存放数据，拥有独立的页表，申请新的pid，在内存申请内核栈。如果文件名无效或者进程池满，则返回-1。
-
++ 实现了mutex和semaphore的死锁检测，检测mutex采用拓扑排序检测是否死锁，利用mutex和线程之间的关系建边，如果是有向无环图则不存在死锁；检测semaphore采用银行家算，如果当前的可用semaphore向量能够满足某些线程的需要，那么考虑最好的情况，线程得到资源后即可结束释放资源，然后依次检测，如果所有线程都能够得到满足，那么就不存在死锁。
 
 # 问答作业
-实际是p2执行，stride采用8bit无符号整形存储，故stride的最大值为255，而p2执行一个时间片后，p2.stride = 250 + 10 = 260 % 256 = 4，下次找最小的stride依旧是p2。
-当优先级为2时，pass最大为BIG_STRIDE/2，若STRIDE_MAX - STRIDE_MIN > BIG_STRIDE/2，则STRIDE_MAX在上一步执行前的最小可能取值为TRIDE_MAX - BIG_STRIDE/2 > STRIDE_MIN，这与之前的算法矛盾，STRIDE_MAX在上一步执行前并不是最小值，但却执行了。
-
-```Rust
-use core::cmp::Ordering;
-
-struct Stride(u64);
-
-impl PartialOrd for Stride {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        // ...
-        self.0.partial_cmp(&other.0)
-    }
-}
-
-impl PartialEq for Stride {
-    fn eq(&self, other: &Self) -> bool {
-        false
-    }
-}
-```
+1. 当主线程 (即 0 号线程) 退出时，需要回收的资源有：线程的计时器，线程的res(包括线程标识符tid,用户线程栈ustack_base，进程的弱指针)，进程所占的空间，文件描述符表，清空上下文，进程的pid。其他线程的 TaskControlBlock在调度时被引用，不需要回收，因为TCB在主线程结束时才会回收。
+2. Mutex1的在激活线程之前释放锁，这可能会导致在释放锁后被其他的线程获得锁，导致同时存在两个线程获得同一个锁；Mutex2的实现方式保证了激活的线程能够独占锁。
 
 # 荣誉准则
 1. 在完成本次实验的过程（含此前学习的过程）中，我曾分别与 以下各位 就（与本次实验相关的）以下方面做过交流，还在代码中对应的位置以注释形式记录了具体的交流对象及内容：

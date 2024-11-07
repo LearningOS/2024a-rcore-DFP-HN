@@ -1,30 +1,14 @@
-# Lab3报告
+# Lab4报告
 ## 实现的功能
-+ 实现了进程的创建，分配独立的空间存放数据，拥有独立的页表，申请新的pid，在内存申请内核栈。如果文件名无效或者进程池满，则返回-1。
-
++ 在DiskInode结构体中加入了hard_link统计硬链接的个数，如果硬链接个数为0，则在磁盘的对应位置删除文件，实现了硬链接的创建和取消，获取文件的状态。
 
 # 问答作业
-实际是p2执行，stride采用8bit无符号整形存储，故stride的最大值为255，而p2执行一个时间片后，p2.stride = 250 + 10 = 260 % 256 = 4，下次找最小的stride依旧是p2。
-当优先级为2时，pass最大为BIG_STRIDE/2，若STRIDE_MAX - STRIDE_MIN > BIG_STRIDE/2，则STRIDE_MAX在上一步执行前的最小可能取值为TRIDE_MAX - BIG_STRIDE/2 > STRIDE_MIN，这与之前的算法矛盾，STRIDE_MAX在上一步执行前并不是最小值，但却执行了。
+1. root inode 作为一个根目录，存放着所有文件的节点，通过root inode可以找到存放的所有文件。如果root inode中的内容损坏了，会导致文件系统无法支持使用，可能部分文件信息丢失。
 
-```Rust
-use core::cmp::Ordering;
+1. 在 Linux 或类 Unix 系统中，管道（pipe） 是一个非常有用的工具，它允许你将一个命令的输出直接作为另一个命令的输入，从而将多个简单的命令组合起来实现复杂的操作。管道符 | 是连接命令的核心。使用管道（pipe）结合 cat 和 wc 统计文件的行数,cat example.txt | wc -l
 
-struct Stride(u64);
+2. 通过共享内存区域，多个进程可以在内存中交换数据而不需要通过管道或消息队列来传输。
 
-impl PartialOrd for Stride {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        // ...
-        self.0.partial_cmp(&other.0)
-    }
-}
-
-impl PartialEq for Stride {
-    fn eq(&self, other: &Self) -> bool {
-        false
-    }
-}
-```
 
 # 荣誉准则
 1. 在完成本次实验的过程（含此前学习的过程）中，我曾分别与 以下各位 就（与本次实验相关的）以下方面做过交流，还在代码中对应的位置以注释形式记录了具体的交流对象及内容：
