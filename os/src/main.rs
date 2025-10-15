@@ -1,21 +1,14 @@
-//! The main module and entrypoint
+//! 内核主模块与入口
 //!
-//! Various facilities of the kernels are implemented as submodules. The most
-//! important ones are:
+//! 子模块概览：
+//! - [`trap`]: 用户态到内核态的陷入与返回
+//! - [`task`]: 任务管理与调度
+//! - [`syscall`]: 系统调用实现
+//! - [`mm`]: 基于 SV39 的内存映射与管理
+//! - [`sync`]: 基于静态数据结构的安全封装
 //!
-//! - [`trap`]: Handles all cases of switching from userspace to the kernel
-//! - [`task`]: Task management
-//! - [`syscall`]: System call handling and implementation
-//! - [`mm`]: Address map using SV39
-//! - [`sync`]:Wrap a static data structure inside it so that we are able to access it without any `unsafe`.
-//!
-//! The operating system also starts in this module. Kernel code starts
-//! executing from `entry.asm`, after which [`rust_main()`] is called to
-//! initialize various pieces of functionality. (See its source code for
-//! details.)
-//!
-//! We then call [`task::run_tasks()`] and for the first time go to
-//! userspace.
+//! 启动流程：从 `entry.asm` 进入，随后调用 [`rust_main()`] 初始化各子系统，
+//! 最终进入 [`task::run_tasks()`] 开始调度并首次进入用户态。
 
 #![deny(missing_docs)]
 #![deny(warnings)]
@@ -49,7 +42,7 @@ use core::arch::global_asm;
 
 global_asm!(include_str!("entry.asm"));
 global_asm!(include_str!("link_app.S"));
-/// clear BSS segment
+/// 清零 `.bss` 段（为未初始化的全局/静态变量提供 0 初始值）
 fn clear_bss() {
     extern "C" {
         fn sbss();
@@ -61,7 +54,7 @@ fn clear_bss() {
     }
 }
 
-/// kernel log info
+/// 打印内核日志与关键段边界信息（便于启动期诊断）
 fn kernel_log_info() {
     extern "C" {
         fn stext(); // begin addr of text segment
@@ -98,7 +91,15 @@ fn kernel_log_info() {
 }
 
 #[no_mangle]
-/// the rust entry-point of os
+/// Rust 侧的内核入口（不返回）
+///
+/// 步骤：
+/// 1) 清零 bss 并打印段信息
+/// 2) 初始化内存管理并自检
+/// 3) 创建初始用户进程（initproc）
+/// 4) 初始化陷入/中断与时钟中断
+/// 5) 列出可加载的用户程序
+/// 6) 进入调度主循环
 pub fn rust_main() -> ! {
     clear_bss();
     kernel_log_info();

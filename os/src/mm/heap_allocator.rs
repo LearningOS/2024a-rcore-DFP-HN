@@ -13,7 +13,14 @@ pub fn handle_alloc_error(layout: core::alloc::Layout) -> ! {
 }
 /// heap space ([u8; KERNEL_HEAP_SIZE])
 static mut HEAP_SPACE: [u8; KERNEL_HEAP_SIZE] = [0; KERNEL_HEAP_SIZE];
-/// initiate heap allocator
+/// 初始化内核堆分配器
+///
+/// 作用：
+/// - 使用预留的静态数组 `HEAP_SPACE` 作为堆内存池（大小为 `KERNEL_HEAP_SIZE`）。
+/// - 调用全局分配器 `HEAP_ALLOCATOR.init(base, size)` 完成可分配区域登记。
+///
+/// 安全性：
+/// - 由于需要取得静态可变内存的裸指针，使用 `unsafe`，但仅用于初始化一次。
 pub fn init_heap() {
     unsafe {
         HEAP_ALLOCATOR

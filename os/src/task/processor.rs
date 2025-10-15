@@ -15,11 +15,14 @@ use alloc::sync::Arc;
 use lazy_static::*;
 use crate::config::BIG_STRIDE;
 
+/// 处理器管理结构：记录当前运行任务与空闲上下文，负责调度切换。
 /// Processor management structure
 pub struct Processor {
+    /// 当前处理器上正在运行的任务；为 None 时表示空闲。
     ///The task currently executing on the current processor
     current: Option<Arc<TaskControlBlock>>,
 
+    /// 每核的空闲任务上下文，用于回到空闲流触发调度与切换。
     ///The basic control flow of each core, helping to select and switch process
     idle_task_cx: TaskContext,
 }
@@ -54,8 +57,12 @@ lazy_static! {
     pub static ref PROCESSOR: UPSafeCell<Processor> = unsafe { UPSafeCell::new(Processor::new()) };
 }
 
-///The main part of process execution and scheduling
-///Loop `fetch_task` to get the process that needs to run, and switch the process through `__switch`
+/// 调度与进程执行的主循环。
+/// - 持续调用 `fetch_task` 从就绪队列获取下一个要运行的任务；若无任务则记录告警并继续循环。
+/// - 若当前有运行中的任务，按步长调度规则更新其 `stride` 值。
+/// - 为即将运行的任务设置状态为 `Running`，必要时记录 `start_time`，并通过 `__switch`
+///   从空闲上下文切换到该任务的上下文（`idle_task_cx_ptr` -> `next_task_cx_ptr`）。
+/// - 该函数为无限循环，除非系统异常退出，否则不会返回。
 pub fn run_tasks() {
     loop {
         let mut processor = PROCESSOR.exclusive_access();
@@ -112,6 +119,12 @@ pub fn current_trap_cx() -> &'static mut TrapContext {
         .get_trap_cx()
 }
 
+/// 切回空闲调度上下文并触发新一轮调度。
+///
+/// - `switched_task_cx_ptr`：当前任务的 `TaskContext` 指针，切出前将寄存器保存到这里；
+/// - 从 `PROCESSOR` 取出每核的 `idle_task_cx_ptr`，调用 `__switch(switched, idle)`，
+///   将控制流“返回”到空闲调度循环，由调度器选择下一个任务并再度 `__switch` 进入；
+/// - 本函数不做选择逻辑，仅负责上下文切换到空闲流。
 ///Return to idle control flow for new scheduling
 pub fn schedule(switched_task_cx_ptr: *mut TaskContext) {
     let mut processor = PROCESSOR.exclusive_access();

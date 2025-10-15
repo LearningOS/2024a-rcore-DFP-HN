@@ -1,4 +1,4 @@
-//! Implementation of [`MapArea`] and [`MemorySet`].
+//! `MapArea` / `MemorySet` 实现：进程/内核地址空间的页表与映射管理。
 use super::{frame_alloc, FrameTracker};
 use super::{PTEFlags, PageTable, PageTableEntry};
 use super::{PhysAddr, PhysPageNum, VirtAddr, VirtPageNum};
@@ -26,11 +26,11 @@ extern "C" {
 }
 
 lazy_static! {
-    /// The kernel's initial memory mapping(kernel address space)
+    /// 内核的初始地址空间（kernel address space）
     pub static ref KERNEL_SPACE: Arc<UPSafeCell<MemorySet>> =
         Arc::new(unsafe { UPSafeCell::new(MemorySet::new_kernel()) });
 }
-/// address space
+/// 地址空间结构：包含页表与映射区域集合
 pub struct MemorySet {
     page_table: PageTable,
     areas: Vec<MapArea>,
@@ -253,7 +253,11 @@ impl MemorySet {
         }
         memory_set
     }
-    /// Change page table by writing satp CSR Register.
+    /// 激活当前地址空间。
+    /// 将页表根地址写入 `satp` CSR，并执行 `sfence.vma` 刷新 TLB，
+    /// 使硬件开始使用本 `MemorySet` 对应的页表进行地址翻译。
+    ///
+    /// 应在切换进程/内核地址空间时调用，仅更新硬件寄存器，不改变现有映射。
     pub fn activate(&self) {
         let satp = self.page_table.token();
         unsafe {
@@ -377,6 +381,7 @@ impl MapArea {
             map_perm: another.map_perm,
         }
     }
+    // 映射一个虚拟页到物理页
     pub fn map_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
         let ppn: PhysPageNum;
         match self.map_type {
@@ -392,23 +397,27 @@ impl MapArea {
         let pte_flags = PTEFlags::from_bits(self.map_perm.bits).unwrap();
         page_table.map(vpn, ppn, pte_flags);
     }
+    //取消一个虚拟页的映射
     pub fn unmap_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
         if self.map_type == MapType::Framed {
             self.data_frames.remove(&vpn);
         }
         page_table.unmap(vpn);
     }
+    //映射整个区域
     pub fn map(&mut self, page_table: &mut PageTable) {
         for vpn in self.vpn_range {
             self.map_one(page_table, vpn);
         }
     }
+    //取消整个区域的映射
     pub fn unmap(&mut self, page_table: &mut PageTable) {
         for vpn in self.vpn_range {
             self.unmap_one(page_table, vpn);
         }
     }
     #[allow(unused)]
+    //缩小区域
     pub fn shrink_to(&mut self, page_table: &mut PageTable, new_end: VirtPageNum) {
         for vpn in VPNRange::new(new_end, self.vpn_range.get_end()) {
             self.unmap_one(page_table, vpn)
@@ -416,6 +425,7 @@ impl MapArea {
         self.vpn_range = VPNRange::new(self.vpn_range.get_start(), new_end);
     }
     #[allow(unused)]
+    //扩展区域
     pub fn append_to(&mut self, page_table: &mut PageTable, new_end: VirtPageNum) {
         for vpn in VPNRange::new(self.vpn_range.get_end(), new_end) {
             self.map_one(page_table, vpn)
@@ -424,6 +434,7 @@ impl MapArea {
     }
     /// data: start-aligned but maybe with shorter length
     /// assume that all frames were cleared before
+    //复制数据
     pub fn copy_data(&mut self, page_table: &mut PageTable, data: &[u8]) {
         assert_eq!(self.map_type, MapType::Framed);
         let mut start: usize = 0;

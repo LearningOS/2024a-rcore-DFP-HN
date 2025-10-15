@@ -58,6 +58,17 @@ pub fn suspend_current_and_run_next() {
 pub const IDLE_PID: usize = 0;
 
 /// Exit the current 'Running' task and run the next task in task list.
+/// 终止当前运行中的任务并切换到下一个任务（不返回）。
+///
+/// 流程：
+/// - 从处理器取出当前任务 TCB；若 PID 为 `IDLE_PID`，则打印并 `panic!` 表示全部应用结束；
+/// - 将任务状态置为 `Zombie`，记录退出码 `exit_code`；
+/// - 将其所有子进程的父指针重定向到全局 `INITPROC`，并把子进程挂到 `INITPROC.children`；
+/// - 清空当前任务的子进程列表并回收其用户地址空间；
+/// - 释放当前任务 TCB 的引用计数；
+/// - 使用一个空的 `TaskContext` 调用 `schedule` 切回空闲上下文，进入调度循环以运行下一个任务。
+///
+/// 注意：该函数会触发上下文切换，正常情况下不会返回到调用点。
 pub fn exit_current_and_run_next(exit_code: i32) {
     // take from Processor
     let task = take_current_task().unwrap();
@@ -111,7 +122,10 @@ lazy_static! {
     ));
 }
 
-///Add init process to the manager
+/// 将初始进程加入任务管理器的就绪队列。
+/// 克隆全局 `INITPROC`，并调用 `add_task` 入队，
+/// 以便调度器能够在启动后调度该用户初始进程运行。
+/// 建议在系统初始化阶段调用一次。
 pub fn add_initproc() {
     add_task(INITPROC.clone());
 }

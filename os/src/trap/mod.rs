@@ -34,6 +34,10 @@ pub fn init() {
     set_kernel_trap_entry();
 }
 
+/// 设置内核态陷入入口。
+/// 将 `stvec` 指向内核陷入处理函数 `trap_from_kernel`，并使用 `TrapMode::Direct`，
+/// 以确保在内核态执行期间发生的异常/中断由内核处理路径接管。
+/// 通常在初始化或进入内核处理流程前调用；与 `set_user_trap_entry` 相对应。
 fn set_kernel_trap_entry() {
     unsafe {
         stvec::write(trap_from_kernel as usize, TrapMode::Direct);
@@ -54,6 +58,15 @@ pub fn enable_timer_interrupt() {
 }
 
 /// trap handler
+/// 统一陷入处理函数（S态），不返回。
+/// - 先设置内核陷入入口为内核路径，避免内核态再次陷入时误入 TRAMPOLINE；
+/// - 读取 `scause`/`stval` 并按类型分派：
+///   - 系统调用（UserEnvCall）：`sepc += 4` 跳过 `ecall`，记录次数，调用 `syscall(a7, [a0,a1,a2])`，将返回值写回 `a0`；
+///   - 访存/取指异常：打印信息并终止当前任务（页故障返回码 -2）；
+///   - 非法指令：终止当前任务（返回码 -3）；
+///   - 监督级时钟中断：`set_next_trigger()` 预约下次中断，`suspend_current_and_run_next()` 抢占切换；
+///   - 其他类型：`panic!`；
+/// - 末尾调用 `trap_return()`，恢复用户上下文并通过 `__restore`/`sret` 返回到用户态。
 #[no_mangle]
 pub fn trap_handler() -> ! {
     set_kernel_trap_entry();
@@ -111,28 +124,31 @@ pub fn trap_handler() -> ! {
 }
 
 #[no_mangle]
-/// return to user space
-/// set the new addr of __restore asm function in TRAMPOLINE page,
-/// set the reg a0 = trap_cx_ptr, reg a1 = phy addr of usr page table,
-/// finally, jump to new addr of __restore asm function
+/// 返回用户态（不返回）。
+///
+/// - 将 `stvec` 设置为用户态陷入入口（TRAMPOLINE）。
+/// - 计算 TRAMPOLINE 页上 `__restore` 的虚拟地址并跳转。
+/// - 跳转前设置寄存器：`a0` 为 TrapContext 的虚拟地址，`a1` 为用户页表 token（`satp`）。
+/// - `__restore` 在汇编中恢复用户通用寄存器与相关 CSR（含 `sepc`），最终执行 `sret` 进入用户态入口。
 pub fn trap_return() -> ! {
-    set_user_trap_entry();
-    let trap_cx_ptr = TRAP_CONTEXT_BASE;
-    let user_satp = current_user_token();
+    set_user_trap_entry(); // 将 stvec 设置为用户态陷入入口（TRAMPOLINE）
+    let trap_cx_ptr = TRAP_CONTEXT_BASE; // TrapContext 的虚拟地址，作为 __restore 的 a0
+    let user_satp = current_user_token(); // 当前任务的用户页表 token（satp），作为 __restore 的 a1
+    // 外部汇编符号：用于计算 __restore 在 TRAMPOLINE 上的虚拟地址
     extern "C" {
         fn __alltraps();
         fn __restore();
     }
-    let restore_va = __restore as usize - __alltraps as usize + TRAMPOLINE;
+    let restore_va = __restore as usize - __alltraps as usize + TRAMPOLINE; // 通过偏移将 __restore 放到 TRAMPOLINE 的虚拟地址
     // trace!("[kernel] trap_return: ..before return");
     unsafe {
         asm!(
-            "fence.i",
-            "jr {restore_va}",         // jump to new addr of __restore asm function
-            restore_va = in(reg) restore_va,
-            in("a0") trap_cx_ptr,      // a0 = virt addr of Trap Context
-            in("a1") user_satp,        // a1 = phy addr of usr page table
-            options(noreturn)
+            "fence.i",                 // 同步 I-cache，确保 TRAMPOLINE 上的代码可见
+            "jr {restore_va}",         // 跳转到 TRAMPOLINE 上的 __restore
+            restore_va = in(reg) restore_va, // 传入跳转目标地址
+            in("a0") trap_cx_ptr,      // a0 = TrapContext 虚拟地址
+            in("a1") user_satp,        // a1 = 用户页表 token（satp）
+            options(noreturn)           // 不返回：__restore 将恢复现场并 sret 进入 U 态
         );
     }
 }

@@ -96,7 +96,12 @@ lazy_static! {
     pub static ref FRAME_ALLOCATOR: UPSafeCell<FrameAllocatorImpl> =
         unsafe { UPSafeCell::new(FrameAllocatorImpl::new()) };
 }
-/// initiate the frame allocator using `ekernel` and `MEMORY_END`
+/// 初始化物理页帧分配器。
+/// 使用链接脚本导出的 `ekernel` 作为内核物理结束地址，
+/// 将可分配的物理页号区间设置为 [ceil(ekernel), floor(MEMORY_END))，
+/// 以避免覆盖内核已占用的物理内存。
+///
+/// 该函数需在首次进行页帧分配之前调用且仅调用一次。
 pub fn init_frame_allocator() {
     extern "C" {
         fn ekernel();
